@@ -1,0 +1,40 @@
+from fastapi import FastAPI
+from sqlalchemy import create_engine, text
+
+app = FastAPI()
+
+# Подключение к нашей базе данных
+DATABASE_URL = "postgresql://postgres:mysecretpassword@localhost:5432/history_db"
+engine = create_engine(DATABASE_URL)
+
+# Создаем таблицу для статей при запуске
+with engine.connect() as conn:
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS articles (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            content TEXT NOT NULL,
+            topic VARCHAR(100) NOT NULL
+        );
+    """))
+    conn.commit()
+
+# Главная страница (для проверки)
+@app.get("/")
+def read_root():
+    return {"message": "Сервер работает! База данных подключена."}
+
+# Эндпоинт для получения всех статей (это будет вызывать мобильное приложение)
+@app.get("/articles")
+def get_articles():
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT id, title, content, topic FROM articles"))
+        articles = []
+        for row in result:
+            articles.append({
+                "id": row[0], 
+                "title": row[1], 
+                "content": row[2], 
+                "topic": row[3]
+            })
+        return {"articles": articles}
