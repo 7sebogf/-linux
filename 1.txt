@@ -1,0 +1,5 @@
+INSERT INTO articles (title, content, topic) VALUES ('Бородинское сражение', 'Крупнейшее сражение войны 1812 года.', 'История России');
+
+INSERT INTO articles (title, content, topic) VALUES ('Основание Рима', 'Согласно легенде, Рим основан в 753 г. до н.э.', 'Древний мир');
+
+INSERT INTO articles (title, content, topic) VALUES ('Книгопечатание', 'Иоганн Гутенберг изобрел печатный станок в XV веке.', 'Средневековье');
