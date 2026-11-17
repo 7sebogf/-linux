@@ -1,53 +1,14 @@
--- Удаляем старые таблицы, чтобы начать с чистого листа (если они есть)
-DROP TABLE IF EXISTS favorites;
-DROP TABLE IF EXISTS articles;
-DROP TABLE IF EXISTS topics;
-DROP TABLE IF EXISTS users;
-
--- 1. Таблица пользователей
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(50) UNIQUE NOT NULL,
-    password VARCHAR(100) NOT NULL
-);
-
--- 2. Таблица тем (категорий)
-CREATE TABLE topics (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) UNIQUE NOT NULL
-);
-
--- 3. Таблица статей
-CREATE TABLE articles (
-    id SERIAL PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
-    content TEXT NOT NULL,
-    topic_id INTEGER REFERENCES topics(id) ON DELETE CASCADE
-);
-
--- 4. Таблица избранного (связь пользователя и статьи)
-CREATE TABLE favorites (
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    article_id INTEGER REFERENCES articles(id) ON DELETE CASCADE,
-    PRIMARY KEY (user_id, article_id)
-);
-
--- НАПОЛНЯЕМ ТЕМАМИ
-INSERT INTO topics (name) VALUES 
-('Древний мир'),
-('Средневековье'),
-('История России'),
-('Новейшее время');
-
--- НАПОЛНЯЕМ СТАТЬЯМИ (теперь тема указывается по ID)
-INSERT INTO articles (title, content, topic_id) VALUES 
-('Основание Рима', 'Согласно легенде, Рим был основан в 753 г. до н.э. братьями Ромулом и Ремом.', 1),
-('Пирамида Хеопса', 'Крупнейшая египетская пирамида, единственное сохранившееся чудо света.', 1),
-('Падение Западной Римской империи', 'В 476 году был свергнут последний император Ромул Августул.', 1),
-('Крещение Руси', 'В 988 году князь Владимир Святославич принял христианство.', 3),
-('Ледовое побоище', 'Битва на Чудском озере в 1242 году между новгородцами и Ливонским орденом.', 3),
-('Бородинское сражение', 'Крупнейшее сражение Отечественной войны 1812 года.', 3),
-('Изобретение книгопечатания', 'Иоганн Гутенберг создал печатный станок в XV веке.', 2),
-('Великие географические открытия', 'Колумб открыл Америку в 1492 году, Васко да Гама достиг Индии.', 2),
-('Первая мировая война', 'Глобальный вооруженный конфликт 1914-1918 годов.', 4),
-('Полет Гагарина', '12 апреля 1961 года Юрий Гагарин стал первым человеком в космосе.', 4);
+# Добавь это в конец файла main.py
+@app.post("/login")
+def login(user: UserAuth):
+    with engine.connect() as conn:
+        # Ищем пользователя с таким логином и паролем
+        result = conn.execute(
+            text("SELECT id FROM users WHERE username = :u AND password = :p"),
+            {"u": user.username, "p": user.password}
+        ).fetchone()
+        
+        if result:
+            return {"status": "success", "message": "Вход выполнен!"}
+        else:
+            return {"status": "error", "message": "Неверный логин или пароль"}
