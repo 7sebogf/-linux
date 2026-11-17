@@ -52,3 +52,43 @@ def login(user: UserAuth):
             return {"status": "success", "message": "Вход выполнен!"}
         else:
             return {"status": "error", "message": "Неверный логин или пароль"}
+
+class FavoriteRequest(BaseModel):
+    username: str
+    article_id: int
+
+# Добавить в избранное
+@app.post("/favorites/add")
+def add_favorite(req: FavoriteRequest):
+    with engine.connect() as conn:
+        try:
+            # Находим ID пользователя по его логину
+            user_res = conn.execute(text("SELECT id FROM users WHERE username = :u"), {"u": req.username}).fetchone()
+            if not user_res:
+                return {"status": "error", "message": "Пользователь не найден"}
+            
+            user_id = user_res[0]
+            
+            # Добавляем связь в таблицу favorites
+            conn.execute(text("INSERT INTO favorites (user_id, article_id) VALUES (:uid, :aid)"), 
+                         {"uid": user_id, "aid": req.article_id})
+            conn.commit()
+            return {"status": "success", "message": "Добавлено в избранное"}
+        except Exception:
+            # Если уже добавлено, база выдаст ошибку (потому что у нас PRIMARY KEY user_id + article_id)
+            return {"status": "error", "message": "Уже в избранном"}
+
+# Получить список избранного для пользователя
+@app.get("/favorites")
+def get_favorites(username: str):
+    with engine.connect() as conn:
+        query = text("""
+            SELECT a.id, a.title, a.content, t.name as topic 
+            FROM articles a 
+            JOIN topics t ON a.topic_id = t.id
+            JOIN favorites f ON a.id = f.article_id
+            JOIN users u ON f.user_id = u.id
+            WHERE u.username = :u
+        """)
+        res = conn.execute(query, {"u": username})
+        return {"articles": [{"id": r[0], "title": r[1], "content": r[2], "topic": r[3]} for r in res]}
