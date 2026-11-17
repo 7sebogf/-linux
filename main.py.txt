@@ -1,4 +1,58 @@
-# Добавь это в конец файла main.py
+from fastapi import FastAPI
+from sqlalchemy import create_engine, text
+from pydantic import BaseModel
+
+app = FastAPI()
+
+# Подключение к нашей новой базе данных
+engine = create_engine("postgresql://postgres:mysecretpassword@localhost:5432/history_db")
+
+# Модель для приема логина и пароля
+class UserAuth(BaseModel):
+    username: str
+    password: str
+
+# --- МЕТОДЫ ДЛЯ СТАТЕЙ ---
+@app.get("/articles")
+def get_articles(topic: str = None):
+    with engine.connect() as conn:
+        if topic:
+            # Используем JOIN для получения названия темы
+            query = text("""
+                SELECT a.id, a.title, a.content, t.name as topic 
+                FROM articles a 
+                JOIN topics t ON a.topic_id = t.id 
+                WHERE t.name = :t
+            """)
+            res = conn.execute(query, {"t": topic})
+        else:
+            query = text("""
+                SELECT a.id, a.title, a.content, t.name as topic 
+                FROM articles a 
+                JOIN topics t ON a.topic_id = t.id
+            """)
+            res = conn.execute(query)
+            
+        return {"articles": [{"id": r[0], "title": r[1], "content": r[2], "topic": r[3]} for r in res]}
+
+# --- МЕТОДЫ ДЛЯ ПОЛЬЗОВАТЕЛЕЙ ---
+
+# 1. Регистрация (создание нового пользователя)
+@app.post("/register")
+def register(user: UserAuth):
+    with engine.connect() as conn:
+        try:
+            conn.execute(
+                text("INSERT INTO users (username, password) VALUES (:u, :p)"), 
+                {"u": user.username, "p": user.password}
+            )
+            conn.commit()
+            return {"status": "success", "message": "Пользователь создан!"}
+        except Exception:
+            # Если пользователь с таким логином уже есть
+            return {"status": "error", "message": "Этот логин уже занят"}
+
+# 2. Вход (проверка логина и пароля)
 @app.post("/login")
 def login(user: UserAuth):
     with engine.connect() as conn:
