@@ -1,3 +1,4 @@
+cat << 'EOF' > main.py
 from fastapi import FastAPI
 from sqlalchemy import create_engine, text
 
@@ -29,3 +30,4 @@ def get_articles(topic: str = None):
                 "topic": row[3]
             })
         return {"articles": articles}
+EOF
