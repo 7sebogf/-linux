@@ -1,33 +1,18 @@
-cat << 'EOF' > main.py
 from fastapi import FastAPI
 from sqlalchemy import create_engine, text
 
 app = FastAPI()
-
-DATABASE_URL = "postgresql://postgres:mysecretpassword@localhost:5432/history_db"
-engine = create_engine(DATABASE_URL)
+engine = create_engine("postgresql://postgres:mysecretpassword@localhost:5432/history_db")
 
 @app.get("/")
 def read_root():
-    return {"message": "Сервер работает! База данных подключена."}
+    return {"message": "Сервер работает!"}
 
 @app.get("/articles")
 def get_articles(topic: str = None):
     with engine.connect() as conn:
         if topic:
-            query = text("SELECT id, title, content, topic FROM articles WHERE topic = :t")
-            result = conn.execute(query, {"t": topic})
+            res = conn.execute(text("SELECT * FROM articles WHERE topic = :t"), {"t": topic})
         else:
-            query = text("SELECT id, title, content, topic FROM articles")
-            result = conn.execute(query)
-            
-        articles = []
-        for row in result:
-            articles.append({
-                "id": row[0],
-                "title": row[1],
-                "content": row[2],
-                "topic": row[3]
-            })
-        return {"articles": articles}
-EOF
+            res = conn.execute(text("SELECT * FROM articles"))
+        return {"articles": [{"id": r[0], "title": r[1], "content": r[2], "topic": r[3]} for r in res]}
