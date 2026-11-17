@@ -1,14 +1,3 @@
-from fastapi import FastAPI
-from sqlalchemy import create_engine, text
+INSERT INTO articles (title, content, topic) VALUES ('Пирамида Хеопса', 'Самое большое из семи чудес света.', 'Древний мир');
 
-app = FastAPI()
-engine = create_engine("postgresql://postgres:mysecretpassword@localhost:5432/history_db")
-
-@app.get("/articles")
-def get_articles(topic: str = None):
-    with engine.connect() as conn:
-        if topic:
-            res = conn.execute(text("SELECT * FROM articles WHERE topic = :t"), {"t": topic})
-        else:
-            res = conn.execute(text("SELECT * FROM articles"))
-        return {"articles": [{"id": r[0], "title": r[1], "content": r[2], "topic": r[3]} for r in res]}
+INSERT INTO articles (title, content, topic) VALUES ('Ледовое побоище', 'Битва на Чудском озере в 1242 году.', 'История России');
