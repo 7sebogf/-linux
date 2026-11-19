@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from sqlalchemy import create_engine, text
 from pydantic import BaseModel
 
@@ -9,10 +9,17 @@ class UserAuth(BaseModel):
     username: str
     password: str
 
+class FavoriteRequest(BaseModel):
+    username: str
+    article_id: int
+
+class InterestRequest(BaseModel):
+    username: str
+    topic_name: str
+
 @app.get("/articles")
 def get_articles(topic: str = None, search: str = None):
     with engine.connect() as conn:
-        # Базовый запрос
         base_query = """
             SELECT a.id, a.title, a.content, t.name as topic 
             FROM articles a 
@@ -25,7 +32,6 @@ def get_articles(topic: str = None, search: str = None):
             base_query += " AND t.name = :t"
             params["t"] = topic
         if search:
-            # Ищем совпадение в заголовке или тексте (без учета регистра)
             base_query += " AND (a.title ILIKE :s OR a.content ILIKE :s)"
             params["s"] = f"%{search}%"
             
@@ -56,32 +62,80 @@ def login(user: UserAuth):
         else:
             return {"status": "error", "message": "Неверный логин или пароль"}
 
-class FavoriteRequest(BaseModel):
-    username: str
-    article_id: int
-
-# Добавить в избранное
 @app.post("/favorites/add")
 def add_favorite(req: FavoriteRequest):
     with engine.connect() as conn:
         try:
-            # Находим ID пользователя по его логину
             user_res = conn.execute(text("SELECT id FROM users WHERE username = :u"), {"u": req.username}).fetchone()
             if not user_res:
                 return {"status": "error", "message": "Пользователь не найден"}
             
             user_id = user_res[0]
             
-            # Добавляем связь в таблицу favorites
+            # Добавляем в избранное
             conn.execute(text("INSERT INTO favorites (user_id, article_id) VALUES (:uid, :aid)"), 
                          {"uid": user_id, "aid": req.article_id})
             conn.commit()
+            
+            # Автоматически добавляем интерес, если его еще нет
+            topic_res = conn.execute(text("SELECT topic_id FROM articles WHERE id = :aid"), {"aid": req.article_id}).fetchone()
+            if topic_res:
+                topic_id = topic_res[0]
+                check_interest = conn.execute(text("SELECT 1 FROM user_interests WHERE user_id = :uid AND topic_id = :tid"), 
+                                             {"uid": user_id, "tid": topic_id}).fetchone()
+                if not check_interest:
+                    conn.execute(text("INSERT INTO user_interests (user_id, topic_id) VALUES (:uid, :tid)"), 
+                                 {"uid": user_id, "tid": topic_id})
+                    conn.commit()
+            
             return {"status": "success", "message": "Добавлено в избранное"}
         except Exception:
-            # Если уже добавлено, база выдаст ошибку (потому что у нас PRIMARY KEY user_id + article_id)
             return {"status": "error", "message": "Уже в избранном"}
 
-# Получить список избранного для пользователя
+@app.delete("/favorites/remove")
+def remove_favorite(username: str, article_id: int):
+    with engine.connect() as conn:
+        try:
+            user_res = conn.execute(text("SELECT id FROM users WHERE username = :u"), {"u": username}).fetchone()
+            if not user_res:
+                return {"status": "error", "message": "Пользователь не найден"}
+            
+            user_id = user_res[0]
+            
+            # Узнаем тему удаляемой статьи
+            topic_res = conn.execute(text("""
+                SELECT t.id FROM topics t 
+                JOIN articles a ON t.id = a.topic_id 
+                WHERE a.id = :aid
+            """), {"aid": article_id}).fetchone()
+            
+            # Удаляем статью из избранного
+            conn.execute(
+                text("DELETE FROM favorites WHERE user_id = :uid AND article_id = :aid"),
+                {"uid": user_id, "aid": article_id}
+            )
+            conn.commit()
+            
+            # Проверяем, остались ли еще статьи этой темы в избранном
+            if topic_res:
+                topic_id = topic_res[0]
+                count_res = conn.execute(text("""
+                    SELECT COUNT(*) FROM favorites f
+                    JOIN articles a ON f.article_id = a.id
+                    WHERE f.user_id = :uid AND a.topic_id = :tid
+                """), {"uid": user_id, "tid": topic_id}).fetchone()
+                
+                # Если осталось 0 статей, удаляем интерес
+                if count_res[0] == 0:
+                    conn.execute(text("DELETE FROM user_interests WHERE user_id = :uid AND topic_id = :tid"), 
+                                 {"uid": user_id, "tid": topic_id})
+                    conn.commit()
+                    return {"status": "success", "message": "Удалено из избранного и интересов"}
+            
+            return {"status": "success", "message": "Удалено из избранного"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
 @app.get("/favorites")
 def get_favorites(username: str):
     with engine.connect() as conn:
@@ -96,37 +150,32 @@ def get_favorites(username: str):
         res = conn.execute(query, {"u": username})
         return {"articles": [{"id": r[0], "title": r[1], "content": r[2], "topic": r[3]} for r in res]}
 
-class InterestRequest(BaseModel):
-    username: str
-    topic_name: str
-
-# Сохранить интерес пользователя
 @app.post("/interests/add")
 def add_interest(req: InterestRequest):
     with engine.connect() as conn:
         try:
-            # Ищем ID пользователя и ID темы по их названиям
             user_res = conn.execute(text("SELECT id FROM users WHERE username = :u"), {"u": req.username}).fetchone()
             topic_res = conn.execute(text("SELECT id FROM topics WHERE name = :t"), {"t": req.topic_name}).fetchone()
             
             if user_res and topic_res:
                 user_id = user_res[0]
                 topic_id = topic_res[0]
-                # Записываем связь в таблицу
-                conn.execute(text("INSERT INTO user_interests (user_id, topic_id) VALUES (:uid, :tid)"), 
-                             {"uid": user_id, "tid": topic_id})
-                conn.commit()
-                return {"status": "success", "message": f"Интерес '{req.topic_name}' сохранен!"}
+                check = conn.execute(text("SELECT 1 FROM user_interests WHERE user_id = :uid AND topic_id = :tid"), 
+                                     {"uid": user_id, "tid": topic_id}).fetchone()
+                if not check:
+                    conn.execute(text("INSERT INTO user_interests (user_id, topic_id) VALUES (:uid, :tid)"), 
+                                 {"uid": user_id, "tid": topic_id})
+                    conn.commit()
+                    return {"status": "success", "message": "Интерес сохранен"}
+                return {"status": "success", "message": "Интерес уже сохранен"}
+            
             return {"status": "error", "message": "Пользователь или тема не найдены"}
-        except Exception:
-            # Если такая связь уже есть, база выдаст ошибку (PRIMARY KEY)
-            return {"status": "error", "message": "Этот интерес уже сохранен"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
-# Получить интересы пользователя
 @app.get("/interests")
 def get_interests(username: str):
     with engine.connect() as conn:
-        # Достаем названия тем, которые выбрал пользователь
         query = text("""
             SELECT t.name FROM topics t
             JOIN user_interests ui ON t.id = ui.topic_id
@@ -135,25 +184,6 @@ def get_interests(username: str):
         """)
         res = conn.execute(query, {"u": username})
         return {"interests": [row[0] for row in res]}
-
-from fastapi import Query # Добавь это в самый верх файла, если нет
-
-@app.delete("/favorites/remove")
-def remove_favorite(username: str, article_id: int):
-    with engine.connect() as conn:
-        try:
-            user_res = conn.execute(text("SELECT id FROM users WHERE username = :u"), {"u": username}).fetchone()
-            if user_res:
-                user_id = user_res[0]
-                conn.execute(
-                    text("DELETE FROM favorites WHERE user_id = :uid AND article_id = :aid"),
-                    {"uid": user_id, "aid": article_id}
-                )
-                conn.commit()
-                return {"status": "success", "message": "Удалено из избранного"}
-            return {"status": "error", "message": "Пользователь не найден"}
-        except Exception as e:
-            return {"status": "error", "message": str(e)}
 
 @app.delete("/interests/clear")
 def clear_interests(username: str):
