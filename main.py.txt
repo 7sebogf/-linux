@@ -154,3 +154,17 @@ def remove_favorite(username: str, article_id: int):
             return {"status": "error", "message": "Пользователь не найден"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
+
+@app.delete("/interests/clear")
+def clear_interests(username: str):
+    with engine.connect() as conn:
+        try:
+            user_res = conn.execute(text("SELECT id FROM users WHERE username = :u"), {"u": username}).fetchone()
+            if user_res:
+                user_id = user_res[0]
+                conn.execute(text("DELETE FROM user_interests WHERE user_id = :uid"), {"uid": user_id})
+                conn.commit()
+                return {"status": "success", "message": "Интересы очищены"}
+            return {"status": "error", "message": "Пользователь не найден"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
