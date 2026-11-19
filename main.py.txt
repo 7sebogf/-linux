@@ -135,3 +135,21 @@ def get_interests(username: str):
         """)
         res = conn.execute(query, {"u": username})
         return {"interests": [row[0] for row in res]}
+
+# Удалить из избранного
+@app.delete("/favorites/remove")
+def remove_favorite(req: FavoriteRequest):
+    with engine.connect() as conn:
+        try:
+            user_res = conn.execute(text("SELECT id FROM users WHERE username = :u"), {"u": req.username}).fetchone()
+            if user_res:
+                user_id = user_res[0]
+                conn.execute(
+                    text("DELETE FROM favorites WHERE user_id = :uid AND article_id = :aid"),
+                    {"uid": user_id, "aid": req.article_id}
+                )
+                conn.commit()
+                return {"status": "success", "message": "Удалено из избранного"}
+            return {"status": "error", "message": "Пользователь не найден"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
