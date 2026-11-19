@@ -10,23 +10,26 @@ class UserAuth(BaseModel):
     password: str
 
 @app.get("/articles")
-def get_articles(topic: str = None):
+def get_articles(topic: str = None, search: str = None):
     with engine.connect() as conn:
+        # Базовый запрос
+        base_query = """
+            SELECT a.id, a.title, a.content, t.name as topic 
+            FROM articles a 
+            JOIN topics t ON a.topic_id = t.id
+            WHERE 1=1
+        """
+        params = {}
+        
         if topic:
-            query = text("""
-                SELECT a.id, a.title, a.content, t.name as topic 
-                FROM articles a 
-                JOIN topics t ON a.topic_id = t.id 
-                WHERE t.name = :t
-            """)
-            res = conn.execute(query, {"t": topic})
-        else:
-            query = text("""
-                SELECT a.id, a.title, a.content, t.name as topic 
-                FROM articles a 
-                JOIN topics t ON a.topic_id = t.id
-            """)
-            res = conn.execute(query)
+            base_query += " AND t.name = :t"
+            params["t"] = topic
+        if search:
+            # Ищем совпадение в заголовке или тексте (без учета регистра)
+            base_query += " AND (a.title ILIKE :s OR a.content ILIKE :s)"
+            params["s"] = f"%{search}%"
+            
+        res = conn.execute(text(base_query), params)
         return {"articles": [{"id": r[0], "title": r[1], "content": r[2], "topic": r[3]} for r in res]}
 
 @app.post("/register")
